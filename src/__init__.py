@@ -2,28 +2,39 @@ import os
 from flask import Flask
 from config import Config
 from .extensions import db, migrate, bcrypt, jwt
+from flask_cors import CORS
 
 def create_app():
     app = Flask(__name__, instance_relative_config=False)
     app.config.from_object(Config)
 
-    # Ensure upload folder exists
+    
+    CORS(app, origins=[
+        "http://localhost:5173",
+        "https://afrater-web.vercel.app"
+    ])
+
+    #  HOME ROUTE 
+    @app.route("/")
+    def home():
+        return {"message": "Welcome to AFRATER"}
+
+    
     os.makedirs(app.config.get("UPLOAD_FOLDER", "uploads"), exist_ok=True)
 
-    # Init extensions
+    #  Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     bcrypt.init_app(app)
     jwt.init_app(app)
 
-    # Register blueprints
+    #  Register blueprints
     from .routes.auth import auth_bp
     from .routes.mpesa import mpesa_bp
     from .routes.scam import scam_bp
     from .routes.uploads import upload_bp
     from .routes.contacts import contacts_bp
     from .routes.transactions import tx_bp
-
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(mpesa_bp, url_prefix='/mpesa')
