@@ -8,33 +8,24 @@ def create_app():
     app = Flask(__name__, instance_relative_config=False)
     app.config.from_object(Config)
 
-    #  CORS CONFIG
-    CORS(app, resources={
-        r"/*": {
-            "origins": [
-                "http://localhost:5173",
-                "https://afrater-web.vercel.app"
-            ],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"]
-        }
-    })
+    # SIMPLE + STRONG CORS (works with Vercel + Render)
+    CORS(app, supports_credentials=True)
 
-    # HOME ROUTE
+    #  HOME ROUTE (TEST)
     @app.route("/")
     def home():
         return {"message": "Welcome to AFRATER"}
 
-    # Upload folder
+    # Ensure upload folder exists
     os.makedirs(app.config.get("UPLOAD_FOLDER", "uploads"), exist_ok=True)
 
-    # Extensions
+    #  Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     bcrypt.init_app(app)
     jwt.init_app(app)
 
-    # Blueprints
+    # Register blueprints
     from .routes.auth import auth_bp
     from .routes.mpesa import mpesa_bp
     from .routes.scam import scam_bp
