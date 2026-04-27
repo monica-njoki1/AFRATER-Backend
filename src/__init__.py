@@ -8,15 +8,24 @@ def create_app():
     app = Flask(__name__, instance_relative_config=False)
     app.config.from_object(Config)
 
-    #  CORS
+    # CORS — explicit origin required when Authorization header is used
     CORS(
         app,
         resources={r"/*": {
-            "origins": "*",
+            "origins": ["https://afrater-web.vercel.app"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"]
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True
         }}
     )
+
+    # Ensure CORS headers are present on every response (including errors)
+    @app.after_request
+    def after_request(response):
+        response.headers.add("Access-Control-Allow-Origin", "https://afrater-web.vercel.app")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        return response
 
     # Home route
     @app.route("/")
