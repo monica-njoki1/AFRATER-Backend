@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from datetime import timedelta
 
 # Load .env file
 load_dotenv()
@@ -7,7 +8,7 @@ load_dotenv()
 class Config:
     # Flask Settings
     SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey")
-    DEBUG = True
+    DEBUG = os.getenv("FLASK_DEBUG", "False").lower() == "true"  # False in production
 
     # Database
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///afrater.db")
@@ -20,7 +21,7 @@ class Config:
 
     # JWT
     JWT_SECRET_KEY = SECRET_KEY
-    JWT_ACCESS_TOKEN_EXPIRES = 86400  # 1 day
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=1)  # must be timedelta, not int
 
     # DARAJA API
     DARAJA_CONSUMER_KEY = os.getenv("DARAJA_CONSUMER_KEY")
