@@ -31,8 +31,10 @@ def upload_to_cloudinary(file, public_id=None):
     try:
         options = {
             "folder": "afrater/profiles",
-            "resource_type": "auto",  # handles gif, jpg, png
+            "resource_type": "image",
             "overwrite": True,
+            "format": "",          # keep original format (preserves GIF)
+            "flags": "animated",   # preserve GIF animation
         }
         if public_id:
             options["public_id"] = public_id
