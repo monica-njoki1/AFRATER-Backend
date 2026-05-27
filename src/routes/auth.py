@@ -3,7 +3,8 @@ from src.models.models import db, User, TokenBlocklist
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity, get_jwt
 from src import bcrypt
 import os
-from werkzeug.utils import secure_filename
+import cloudinary
+import cloudinary.uploader
 from datetime import datetime
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
@@ -12,24 +13,56 @@ auth_bp = Blueprint("auth_bp", __name__, url_prefix="/auth")
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}
 
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True
+)
 
-# ----------- Utility functions -----------
+
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+def upload_to_cloudinary(file, public_id=None):
+    """Upload a file to Cloudinary and return the secure URL."""
+    try:
+        options = {
+            "folder": "afrater/profiles",
+            "resource_type": "auto",  # handles gif, jpg, png
+            "overwrite": True,
+        }
+        if public_id:
+            options["public_id"] = public_id
+
+        result = cloudinary.uploader.upload(file, **options)
+        return result.get("secure_url")
+    except Exception as e:
+        print(f"Cloudinary upload error: {e}")
+        return None
+
+
+def delete_from_cloudinary(url):
+    """Delete an image from Cloudinary by URL."""
+    try:
+        # Extract public_id from URL
+        parts = url.split("/")
+        # public_id is folder/filename without extension
+        public_id = "/".join(parts[-2:]).rsplit(".", 1)[0]
+        cloudinary.uploader.destroy(public_id)
+    except Exception as e:
+        print(f"Cloudinary delete error: {e}")
+
+
 def send_login_email(to_email, name):
-    """Send a login notification email via SendGrid."""
     try:
         api_key = os.getenv("SENDGRID_API_KEY")
         sender = os.getenv("MAIL_DEFAULT_SENDER", "afrater@example.com")
-
         if not api_key:
-            print("SendGrid API key not set, skipping email.")
             return
-
         now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-
         message = Mail(
             from_email=sender,
             to_emails=to_email,
@@ -49,13 +82,9 @@ def send_login_email(to_email, name):
             </div>
             """
         )
-
         sg = SendGridAPIClient(api_key)
         sg.send(message)
-        print(f"Login email sent to {to_email}")
-
     except Exception as e:
-        # Never block login if email fails
         print(f"Failed to send login email: {e}")
 
 
@@ -74,15 +103,13 @@ def register():
     if User.query.filter_by(email=email).first():
         return jsonify({"error": "Email already registered"}), 400
 
-    filename = None
+    profile_pic_url = None
     if profile_pic and allowed_file(profile_pic.filename):
-        os.makedirs("uploads/users", exist_ok=True)
-        filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secure_filename(profile_pic.filename)}"
-        profile_pic.save(os.path.join("uploads/users", filename))
+        profile_pic_url = upload_to_cloudinary(profile_pic, public_id=f"user_{email}")
 
     user = User(name=name, email=email)
     user.set_password(password)
-    user.profile_pic = filename
+    user.profile_pic = profile_pic_url  # store Cloudinary URL
 
     db.session.add(user)
     db.session.commit()
@@ -104,8 +131,6 @@ def login():
         return jsonify({"error": "Invalid credentials"}), 401
 
     token = create_access_token(identity=user.id)
-
-    # Send login notification email (non-blocking)
     send_login_email(user.email, user.name)
 
     return jsonify({
@@ -114,7 +139,7 @@ def login():
             "id": user.id,
             "name": user.name,
             "email": user.email,
-            "profile_pic": user.profile_pic
+            "profile_pic_url": user.profile_pic  # permanent Cloudinary URL
         }
     })
 
@@ -139,7 +164,7 @@ def profile():
         "id": user.id,
         "name": user.name,
         "email": user.email,
-        "profile_pic": user.profile_pic
+        "profile_pic_url": user.profile_pic
     })
 
 
@@ -156,14 +181,13 @@ def update_profile():
 
     profile_pic = request.files.get("profile_pic")
     if profile_pic and allowed_file(profile_pic.filename):
-        os.makedirs("uploads/users", exist_ok=True)
-        filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secure_filename(profile_pic.filename)}"
-        profile_pic.save(os.path.join("uploads/users", filename))
+        # Delete old photo from Cloudinary if exists
         if user.profile_pic:
-            old_path = os.path.join("uploads/users", user.profile_pic)
-            if os.path.exists(old_path):
-                os.remove(old_path)
-        user.profile_pic = filename
+            delete_from_cloudinary(user.profile_pic)
+        # Upload new photo
+        url = upload_to_cloudinary(profile_pic, public_id=f"user_{user.email}")
+        if url:
+            user.profile_pic = url
 
     db.session.commit()
     return jsonify({
@@ -172,7 +196,7 @@ def update_profile():
             "id": user.id,
             "name": user.name,
             "email": user.email,
-            "profile_pic": user.profile_pic
+            "profile_pic_url": user.profile_pic
         }
     })
 
@@ -184,10 +208,18 @@ def delete_account():
     user_id = get_jwt_identity()
     user = User.query.get_or_404(user_id)
 
+    data = request.get_json()
+    password = data.get("password") if data else None
+
+    if not password:
+        return jsonify({"error": "Password is required"}), 400
+
+    if not user.check_password(password):
+        return jsonify({"error": "Incorrect password"}), 401
+
+    # Delete photo from Cloudinary
     if user.profile_pic:
-        path = os.path.join("uploads/users", user.profile_pic)
-        if os.path.exists(path):
-            os.remove(path)
+        delete_from_cloudinary(user.profile_pic)
 
     db.session.delete(user)
     db.session.commit()
