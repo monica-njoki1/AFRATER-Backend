@@ -3,6 +3,9 @@ from src import create_app
 
 # Create the Flask app instance
 app = create_app()
+with app.app_context():
+    from flask_migrate import upgrade
+    upgrade()
 
 # Run the app
 if __name__ == "__main__":
