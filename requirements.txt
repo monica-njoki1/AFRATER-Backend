@@ -27,3 +27,6 @@ gunicorn==21.2.0
 Flask-Migrate==4.0.5
 sendgrid
 cloudinary
+anthropic>=0.25.0        
+python-dotenv>=1.0.0  
+Werkzeug>=3.0.0          
