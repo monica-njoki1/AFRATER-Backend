@@ -21,7 +21,8 @@ class Config:
 
     # JWT
     JWT_SECRET_KEY = SECRET_KEY
-    JWT_ACCESS_TOKEN_EXPIRES = False  # must be timedelta, not int
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=30)
+
 
     # DARAJA API
     DARAJA_CONSUMER_KEY = os.getenv("DARAJA_CONSUMER_KEY")
