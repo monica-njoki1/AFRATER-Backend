@@ -20,7 +20,7 @@ def get_access_token() -> str:
 
     resp = requests.get(
         OAUTH_URL,
-        auth=HTTPBasicAuth(Config.DARAJA_CONSUMER_KEY, Config.DARJA_CONSUMER_SECRET),
+        auth=HTTPBasicAuth(Config.DARAJA_CONSUMER_KEY, Config.DARAJA_CONSUMER_SECRET),
         timeout=10
     )
     resp.raise_for_status()
