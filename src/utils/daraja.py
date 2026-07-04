@@ -24,12 +24,12 @@ def get_access_token() -> str:
         timeout=10
     )
     resp.raise_for_status()
-    data  = resp.json()
-    token = data.get("access_token")
+    data       = resp.json()
+    token      = data.get("access_token")
     expires_in = int(data.get("expires_in", 3600))
 
     _token_cache["token"]      = token
-    _token_cache["expires_at"] = now + expires_in - 60   # refresh 1 min early
+    _token_cache["expires_at"] = now + expires_in - 60
 
     return token
 
@@ -53,11 +53,12 @@ def stk_push(phone: str, amount: float) -> dict:
     except Exception as e:
         return {"error": f"Failed to get access token: {str(e)}"}
 
-    shortcode = Config.BUSINESS_SHORTCODE
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    password  = base64.b64encode(
+    shortcode        = Config.BUSINESS_SHORTCODE
+    timestamp        = datetime.now().strftime("%Y%m%d%H%M%S")
+    password         = base64.b64encode(
         f"{shortcode}{Config.LIPA_PASSKEY}{timestamp}".encode()
     ).decode()
+    normalised_phone = _normalise_phone(phone)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -69,17 +70,19 @@ def stk_push(phone: str, amount: float) -> dict:
         "Timestamp":         timestamp,
         "TransactionType":   "CustomerPayBillOnline",
         "Amount":            int(amount),
-        "PartyA":            _normalise_phone(phone),
+        "PartyA":            normalised_phone,
         "PartyB":            shortcode,
-        "PhoneNumber":       _normalise_phone(phone),
+        "PhoneNumber":       normalised_phone,
         "CallBackURL":       getattr(Config, "MPESA_CALLBACK_URL", ""),
         "AccountReference":  "AFRATER",
         "TransactionDesc":   "AFRATER Payment",
     }
 
+    print(f"STK Push payload: {payload}")
+
     try:
         r = requests.post(STK_URL, json=payload, headers=headers, timeout=15)
-        r.raise_for_status()
+        # Return full response so we can see Safaricom error details
         return r.json()
     except requests.exceptions.Timeout:
         return {"error": "Daraja request timed out. Try again."}
@@ -122,7 +125,6 @@ def query_stk_status(checkout_request_id: str) -> dict:
             },
             timeout=15,
         )
-        r.raise_for_status()
         return r.json()
     except requests.exceptions.Timeout:
         return {"error": "Daraja query timed out."}
