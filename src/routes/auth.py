@@ -49,9 +49,7 @@ def upload_to_cloudinary(file, public_id=None):
 def delete_from_cloudinary(url):
     """Delete an image from Cloudinary by URL."""
     try:
-        # Extract public_id from URL
         parts = url.split("/")
-        # public_id is folder/filename without extension
         public_id = "/".join(parts[-2:]).rsplit(".", 1)[0]
         cloudinary.uploader.destroy(public_id)
     except Exception as e:
@@ -111,7 +109,7 @@ def register():
 
     user = User(name=name, email=email)
     user.set_password(password)
-    user.profile_pic = profile_pic_url  # store Cloudinary URL
+    user.profile_pic = profile_pic_url
 
     db.session.add(user)
     db.session.commit()
@@ -141,7 +139,7 @@ def login():
             "id": user.id,
             "name": user.name,
             "email": user.email,
-            "profile_pic_url": user.profile_pic  # permanent Cloudinary URL
+            "profile_pic_url": user.profile_pic
         }
     })
 
@@ -183,10 +181,8 @@ def update_profile():
 
     profile_pic = request.files.get("profile_pic")
     if profile_pic and allowed_file(profile_pic.filename):
-        # Delete old photo from Cloudinary if exists
         if user.profile_pic:
             delete_from_cloudinary(user.profile_pic)
-        # Upload new photo
         url = upload_to_cloudinary(profile_pic, public_id=f"user_{user.email}")
         if url:
             user.profile_pic = url
@@ -219,10 +215,38 @@ def delete_account():
     if not user.check_password(password):
         return jsonify({"error": "Incorrect password"}), 401
 
-    # Delete photo from Cloudinary
     if user.profile_pic:
         delete_from_cloudinary(user.profile_pic)
 
     db.session.delete(user)
     db.session.commit()
     return jsonify({"message": "Account deleted successfully"})
+
+
+# ---------- Debug Config (temporary — remove after testing) ----------
+@auth_bp.route("/debug-config", methods=["GET"])
+def debug_config():
+    from config import Config
+    import requests
+    from requests.auth import HTTPBasicAuth
+
+    try:
+        resp = requests.get(
+            "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
+            auth=HTTPBasicAuth(Config.DARAJA_CONSUMER_KEY, Config.DARAJA_CONSUMER_SECRET),
+            timeout=10
+        )
+        daraja_status = resp.status_code
+        daraja_response = resp.json()
+    except Exception as e:
+        daraja_status = 0
+        daraja_response = str(e)
+
+    return jsonify({
+        "has_key":         bool(Config.DARAJA_CONSUMER_KEY),
+        "has_secret":      bool(Config.DARAJA_CONSUMER_SECRET),
+        "has_passkey":     bool(Config.LIPA_PASSKEY),
+        "shortcode":       Config.BUSINESS_SHORTCODE,
+        "daraja_status":   daraja_status,
+        "daraja_response": daraja_response,
+    })
