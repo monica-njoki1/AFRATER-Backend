@@ -9,39 +9,32 @@ def create_app():
     app = Flask(__name__, instance_relative_config=False)
     app.config.from_object(Config)
 
-    # CORS 
-    CORS(
-        app,
-        resources={r"/*": {
-            "origins": ["https://afrater-web.vercel.app"],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"],
-            "supports_credentials": True
-        }}
-    )
+    CORS(app, resources={r"/*": {
+        "origins": ["https://afrater-web.vercel.app"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }})
 
-    # Home route
     @app.route("/")
     def home():
         return {"message": "Welcome to AFRATER"}
 
-    # Upload folder
     os.makedirs(app.config.get("UPLOAD_FOLDER", "uploads"), exist_ok=True)
 
-    # Extensions 
     db.init_app(app)
     migrate.init_app(app, db)
     bcrypt.init_app(app)
     jwt.init_app(app)
 
-    # Blueprints
     from .routes.auth         import auth_bp
     from .routes.mpesa        import mpesa_bp
     from .routes.scam         import scam_bp
     from .routes.uploads      import upload_bp
     from .routes.contacts     import contacts_bp
     from .routes.transactions import tx_bp
-    from .routes.query        import query_bp   
+    from .routes.query        import query_bp
+    from .routes.wallet       import wallet_bp
 
     app.register_blueprint(auth_bp,     url_prefix="/auth")
     app.register_blueprint(mpesa_bp,    url_prefix="/mpesa")
@@ -49,6 +42,7 @@ def create_app():
     app.register_blueprint(upload_bp,   url_prefix="/upload")
     app.register_blueprint(contacts_bp, url_prefix="/contacts")
     app.register_blueprint(tx_bp,       url_prefix="/transactions")
-    app.register_blueprint(query_bp,    url_prefix="/query")   
+    app.register_blueprint(query_bp,    url_prefix="/query")
+    app.register_blueprint(wallet_bp,   url_prefix="/wallet")
 
     return app
