@@ -268,6 +268,57 @@ def check_repeat_attempts(phone):
     return 0, []
 
 
+def check_amount_anomaly(amount: float, user_id: int = None) -> tuple:
+    """
+    Check if amount is unusually large compared to user's history.
+    Also flags known bait amounts.
+    """
+    if amount is None:
+        return 0, []
+
+    reasons = []
+    score = 0
+
+    # Known scam bait values
+    BAIT_AMOUNTS = {1, 10, 100, 999, 1000, 9999, 99999, 999999}
+    if amount in BAIT_AMOUNTS:
+        score += 10
+        reasons.append(f"KES {amount} is a commonly used scam bait amount")
+
+    # Very large amount — flag for awareness
+    if amount >= 50000:
+        score += 15
+        reasons.append(f"Large amount: KES {amount:,.0f} — verify recipient before proceeding")
+
+    if amount >= 100000:
+        score += 20
+        reasons.append(f"Very large amount: KES {amount:,.0f} — high risk if sent to wrong person")
+
+    # Compare against user's average if we have history
+    if user_id:
+        from src.models.models import Transaction
+        from sqlalchemy import func
+        from datetime import datetime, timedelta
+
+        since = datetime.utcnow() - timedelta(days=30)
+        avg = Transaction.query.filter(
+            Transaction.user_id == user_id,
+            Transaction.status == "completed",
+            Transaction.created_at >= since,
+        ).with_entities(func.avg(Transaction.amount)).scalar()
+
+        if avg and avg > 0:
+            ratio = amount / avg
+            if ratio >= 5:
+                score += 20
+                reasons.append(
+                    f"KES {amount:,.0f} is {ratio:.0f}x your average transaction "
+                    f"(avg: KES {avg:,.0f}) — unusual activity"
+                )
+
+    return min(score, 45), reasons
+
+
 # ------------------------------------------------------------------ #
 #  CLAUDE API FALLBACK
 #  Only called when keyword engine scores < 30 (edge cases)

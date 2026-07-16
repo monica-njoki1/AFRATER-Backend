@@ -3,12 +3,12 @@ import base64
 from datetime import datetime
 from requests.auth import HTTPBasicAuth
 from config import Config
+from src.utils.phone_validator import validate_kenyan_phone
 
 OAUTH_URL = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
 STK_URL   = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
 QUERY_URL = "https://sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query"
 
-# ── Token cache — reuse for ~1 hour instead of fetching every call ──
 import time
 _token_cache = {"token": None, "expires_at": 0}
 
@@ -34,31 +34,38 @@ def get_access_token() -> str:
     return token
 
 
-def _normalise_phone(phone: str) -> str:
-    """
-    Accepts:  0712345678 / +254712345678 / 254712345678
-    Returns:  254712345678  (format Daraja requires)
-    """
-    phone = phone.strip().replace(" ", "").replace("-", "")
-    if phone.startswith("+"):
-        phone = phone[1:]
-    if phone.startswith("0"):
-        phone = "254" + phone[1:]
-    return phone
-
-
 def stk_push(phone: str, amount: float) -> dict:
+    # ── Validate phone first ──────────────────────────────────────
+    is_valid, normalised, error = validate_kenyan_phone(phone)
+    if not is_valid:
+        return {"error": f"Invalid phone number: {error}"}
+
+    # ── Validate amount ───────────────────────────────────────────
+    try:
+        amount = float(amount)
+    except (ValueError, TypeError):
+        return {"error": "Amount must be a number"}
+
+    if amount < 1:
+        return {"error": "Minimum amount is KES 1"}
+
+    if amount > 150000:
+        return {"error": "Maximum amount per transaction is KES 150,000"}
+
+    if not amount.is_integer() and round(amount, 2) != amount:
+        return {"error": "Amount must be a valid number (e.g. 100 or 100.50)"}
+
+    # ── Get token ─────────────────────────────────────────────────
     try:
         token = get_access_token()
     except Exception as e:
         return {"error": f"Failed to get access token: {str(e)}"}
 
-    shortcode        = Config.BUSINESS_SHORTCODE
-    timestamp        = datetime.now().strftime("%Y%m%d%H%M%S")
-    password         = base64.b64encode(
+    shortcode = Config.BUSINESS_SHORTCODE
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    password  = base64.b64encode(
         f"{shortcode}{Config.LIPA_PASSKEY}{timestamp}".encode()
     ).decode()
-    normalised_phone = _normalise_phone(phone)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -70,19 +77,18 @@ def stk_push(phone: str, amount: float) -> dict:
         "Timestamp":         timestamp,
         "TransactionType":   "CustomerPayBillOnline",
         "Amount":            int(amount),
-        "PartyA":            normalised_phone,
+        "PartyA":            normalised,
         "PartyB":            shortcode,
-        "PhoneNumber":       normalised_phone,
+        "PhoneNumber":       normalised,
         "CallBackURL":       getattr(Config, "MPESA_CALLBACK_URL", ""),
         "AccountReference":  "AFRATER",
         "TransactionDesc":   "AFRATER Payment",
     }
 
-    print(f"STK Push payload: {payload}")
+    print(f"STK Push → phone: {normalised}, amount: {int(amount)}")
 
     try:
         r = requests.post(STK_URL, json=payload, headers=headers, timeout=15)
-        # Return full response so we can see Safaricom error details
         return r.json()
     except requests.exceptions.Timeout:
         return {"error": "Daraja request timed out. Try again."}
@@ -93,10 +99,6 @@ def stk_push(phone: str, amount: float) -> dict:
 
 
 def query_stk_status(checkout_request_id: str) -> dict:
-    """
-    Check whether an STK push completed.
-    Call this when the /mpesa/callback hasn't fired yet.
-    """
     try:
         token = get_access_token()
     except Exception as e:
@@ -119,10 +121,7 @@ def query_stk_status(checkout_request_id: str) -> dict:
         r = requests.post(
             QUERY_URL,
             json=payload,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type":  "application/json",
-            },
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             timeout=15,
         )
         return r.json()
