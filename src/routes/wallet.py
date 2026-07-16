@@ -213,3 +213,28 @@ def get_summary():
         "security_score": security_score,
         "security_label": "excellent" if security_score >= 80 else "good" if security_score >= 60 else "at risk",
     }), 200
+# Add this route to src/routes/wallet.py
+
+@wallet_bp.route("/transactions/clear", methods=["DELETE"])
+@jwt_required()
+def clear_transactions():
+    """
+    DELETE /wallet/transactions/clear
+    Clears all transaction history and suspicious events for current user.
+    """
+    current_user_id = get_jwt_identity()
+
+    # Delete suspicious events first (foreign key constraint)
+    txs = Transaction.query.filter_by(user_id=current_user_id).all()
+    for tx in txs:
+        SuspiciousEvent.query.filter_by(transaction_id=tx.id).delete()
+
+    # Delete all transactions
+    Transaction.query.filter_by(user_id=current_user_id).delete()
+
+    # Delete scam reports
+    ScamReport.query.filter_by(user_id=current_user_id).delete()
+
+    db.session.commit()
+
+    return jsonify({"message": "History cleared successfully"}), 200
